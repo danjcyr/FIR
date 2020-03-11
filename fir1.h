@@ -9,14 +9,18 @@
 #include <time.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <assert.h>
 
-
-// simple buffer without wrap - used for input buffer while convolution processing
-typedef struct buffer {
-   int max_size;        // maximum size of Buffer
+// FIR buffer implementing queing in alternate buffer during fft processing.
+typedef struct fir_buffer {
+   int segment_len;     // max size of real data before starting processing
+   int max_size;        // maximum size of Buffer - shoudl be fft_len
    int num_in_buffer;   // current number of buffer (also next write index)
-   float *b;            // actual buffer data
-} Buffer;
+   float *b1;            // actual buffer data 1
+   float *b2;            // actual buffer data 2
+   float *write_buffer; // buffer we are writing into
+   float *read_buffer;  // buffer ready to process  NULL if not ready.
+} FirBuffer;
 
 // circular buffer for output of each filter
 typedef struct circular_buffer {
@@ -39,15 +43,20 @@ typedef struct fir_filter{
   int len;          // filter length for this FIR filter
   int fft_len;      // Length of FFT processed by engine
   double oo_fft_len;  // 1/length of fft
+  int sample_rate;  // sample rate
   int segment_len;  // segment LENGTH
   int overlap_size; // overlap size
   int num_extra_frames; // number of frames extra to reduce chance of xrun
 
   float *re;        // real samples of filter
   float *hc;        // forward transformed filter input (half-complex)
+  fftwf_plan plan_filter; // plan for filters forward transform
+
+
   float *in_hc;     // input segment for filter shared amongst all filters from parent ConvEngine
   float *out_hc;    // half-complex after freq domain multiply
   float *out_r;     // real output of filter
+  fftwf_plan plan_output; // plan for reverse transform
   float *overlap_r; // portion saved for next block
 
   int num_output_biquads;  // number of biquad sections for IIR filtering on output of filter
@@ -58,15 +67,18 @@ typedef struct fir_filter{
 } FirFilter;
 
 // convolution engine  1 input and N  (# fir filters) output. Output data in outBuffer of FirFilter
-struct conv_engine {
+typedef struct conv_engine {
   int fft_len;        // length of fft
   double oo_fft_len;  // 1/length of fft
+  int sample_rate;
   int filter_len;     // len of filter (shoudl be <= 1/2 fft_len for performance)
   int segment_len;    // len of segement
+  int overlap_size;   // len of fir overlap
 
-  float *in_r;        // input samples real
-  float_*in_hc;       // input data forward transformed
-  Buffer *inBuffer;   // buffer for input data when convolution engine processing a block
+  fftwf_plan plan_input; // plan for filters forward transform
+
+  float *in_hc;       // input data forward transformed
+  FirBuffer *fir_buffer;   // buffer for input data
 
   int num_input_biquads;    // number of biqaud sections on input channel
   Biquad *biquads;    // array of biquads executed on input signal
@@ -75,6 +87,7 @@ struct conv_engine {
   FirFilter **fir_filters; // array of pointers to FirFilter structs
   int num_extra_frames; // number of frames extra to reduce chance of xrun
 
+  pthread_t  thread_conv; // thread to run convolution engine
   bool conv_processing;  // variable used to indicate Convolution engine is busy processing
   pthread_mutex_t mut_conv;  // mutex for protecting writing of conv_processing
 
@@ -86,28 +99,31 @@ struct conv_engine {
 
 } ConvEngine;
 
-
-typedef struct biquad {
-  double dn;
-  double x1, x2, y1, y2;
-  double b0, b1, b2, a1, a2;
-}Biquad;
-
 // one shot buffer function prototypes
-int Buffer_Init(Buffer *buf, int capacity);
-int Buffer_Destroy(Buffer *buf);
+int FirBuffer_Init(FirBuffer *buf, int segment_len, int fft_length);
+int FirBuffer_Destroy(FirBuffer *buf);
+int FirBuffer_AddData(FirBuffer *buf,int len, float *data);
 
 // circular buffer prototypes
 int CircBuffer_Init(CircBuffer* cbuf, int capacity);
 int CircBuffer_Destroy(CircBuffer* cbuf);
+int CircBuffer_AddData(CircBuffer* cbuf, int len, float *data);
+int CircBuffer_GetData(CircBuffer* cfbuf, int len, float *dst);
 
 // FirFilter prototypes
-int FirFilter_Init(FirFilter *f, int len, int fft_len, int num_extra_frames, int num_biquads, Biquad *biquads);
+int FirFilter_Init(FirFilter *f, int len, int fft_len, int num_extra_frames, int sample_rate);
 int FirFilter_Destroy(FirFilter *f);
 int FirFilter_LoadFilter(FirFilter *f, int len, float *impulse);
 int FirFilter_DiracFilter(FirFilter *f);
 
 // ConvEngine prototypes
-int ConvEngine_Init(ConvEngine *ce, int filter_len, int fft_len, int num_fir_filters, int num_input_biquads );
-int
-#endf //FIR1_H
+int ConvEngine_Init(ConvEngine *ce, int filter_len, int fft_len, int num_fir_filters,int sample_rate,int num_extra_frames);
+int ConvEngine_Destroy(ConvEngine *ce);
+
+// these two functions require extremely fast processing and must return
+// in less time than len/sample_rate
+int ConvEngine_AddData(ConvEngine *ce,int len, float* data);
+
+int ConvEngine_GetData(ConvEngine *ce,int len, float* dst);
+
+#endif //FIR1_H
