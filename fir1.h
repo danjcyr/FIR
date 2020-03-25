@@ -20,6 +20,7 @@ typedef struct fir_buffer {
    float *b2;            // actual buffer data 2
    float *write_buffer; // buffer we are writing into
    float *read_buffer;  // buffer ready to process  NULL if not ready.
+   int buffer_ready; // which buffer is ready for processing
 } FirBuffer;
 
 // circular buffer for output of each filter
@@ -75,7 +76,8 @@ typedef struct conv_engine {
   int segment_len;    // len of segement
   int overlap_size;   // len of fir overlap
 
-  fftwf_plan plan_input; // plan for filters forward transform
+  fftwf_plan plan_input1; // plan for filters forward transform
+  fftwf_plan plan_input2; // plan for filters forward transform
 
   float *in_hc;       // input data forward transformed
   FirBuffer *fir_buffer;   // buffer for input data
@@ -100,30 +102,37 @@ typedef struct conv_engine {
 } ConvEngine;
 
 // one shot buffer function prototypes
-int FirBuffer_Init(FirBuffer *buf, int segment_len, int fft_length);
+int FirBuffer_Init(FirBuffer **pbuf, int segment_len, int fft_length);
 int FirBuffer_Destroy(FirBuffer *buf);
 int FirBuffer_AddData(FirBuffer *buf,int len, float *data);
 
 // circular buffer prototypes
-int CircBuffer_Init(CircBuffer* cbuf, int capacity);
+int CircBuffer_Init(CircBuffer** pcbuf, int capacity);
 int CircBuffer_Destroy(CircBuffer* cbuf);
 int CircBuffer_AddData(CircBuffer* cbuf, int len, float *data);
 int CircBuffer_GetData(CircBuffer* cfbuf, int len, float *dst);
 
 // FirFilter prototypes
-int FirFilter_Init(FirFilter *f, int len, int fft_len, int num_extra_frames, int sample_rate);
+int FirFilter_Init(FirFilter **pf, int len, int fft_len, int num_extra_frames,
+  int sample_rate);
 int FirFilter_Destroy(FirFilter *f);
 int FirFilter_LoadFilter(FirFilter *f, int len, float *impulse);
 int FirFilter_DiracFilter(FirFilter *f);
 
 // ConvEngine prototypes
-int ConvEngine_Init(ConvEngine *ce, int filter_len, int fft_len, int num_fir_filters,int sample_rate,int num_extra_frames);
+int ConvEngine_Init(ConvEngine **pce, int filter_len, int fft_len,
+   int num_fir_filters,int sample_rate,int num_extra_frames);
 int ConvEngine_Destroy(ConvEngine *ce);
 
 // these two functions require extremely fast processing and must return
 // in less time than len/sample_rate
 int ConvEngine_AddData(ConvEngine *ce,int len, float* data);
 
-int ConvEngine_GetData(ConvEngine *ce,int len, float* dst);
+int ConvEngine_GetData(ConvEngine *ce,int len, float** dst);
+void* ConvEngine_ConvThread(void *v);
+
+// FOR CHARLIE :)
+void ConvEngine_Initialize(int fft_len, int filter_len, float *filter_real);
+void ConvEngine_Convolve (float *input_segment, float *output);
 
 #endif //FIR1_H
