@@ -210,28 +210,36 @@ int FirFilter_Destroy(FirFilter *f)
 
 int FirFilter_LoadFilter(FirFilter *f, int len, float *impulse)
 {
+	FILE *fpf = fopen("filter_lf_in.txt","w");
+	FILE *fpf1 = fopen("filter_lf_hc.txt","w");
 	if (f->re) fftwf_free(f->re);
 	if (f->hc) fftwf_free(f->hc);
 
 	f->len = len;
-	f->re = fftwf_alloc_real(f->len);
-	f->hc = fftwf_alloc_real(f->len);
+	f->re = fftwf_alloc_real(f->fft_len);
+	f->hc = fftwf_alloc_real(f->fft_len);
+
+	if (f->plan_filter != NULL) fftwf_destroy_plan(f->plan_filter);
+	f->plan_filter = fftwf_plan_r2r_1d(f->fft_len, f->re, f->hc,
+		FFTW_R2HC, FFTW_DESTROY_INPUT | FFTW_MEASURE);
 	for (int i=0;i<f->fft_len;i++) f->re[i]=0;
 
-
 	memcpy(f->re, impulse, sizeof(float) *f->len);
-	if (f->plan_filter != NULL) fftwf_destroy_plan(f->plan_filter);
-	f->plan_filter = fftwf_plan_r2r_1d(f->len, f->re, f->hc,
-		FFTW_R2HC, FFTW_DESTROY_INPUT | FFTW_MEASURE);
+	for (int i = 0; i < f->fft_len; i++) fprintf(fpf,"%f\n",f->re[i]);
+	printf("FF_LF - len= %d  FFt_len = %d\n",f->len,f->fft_len);
 
 	fftwf_execute(f->plan_filter);
+	for (int i = 0; i < f->fft_len; i++) fprintf(fpf1,"%f\n",f->hc[i]);
+	fclose(fpf);
+	fclose(fpf1);
 
 	return 0;
 }
 
 int FirFilter_DiracFilter(FirFilter *f)
 {
-  FILE *fpf = fopen("filter.txt","w");
+	FILE *fpf = fopen("filter_dirac_in.txt","w");
+	FILE *fpf1 = fopen("filter_dirac_hc.txt","w");
 	if (f->re) fftwf_free(f->re);
 	if (f->hc) fftwf_free(f->hc);
 
@@ -242,13 +250,16 @@ int FirFilter_DiracFilter(FirFilter *f)
   f->plan_filter = fftwf_plan_r2r_1d(f->fft_len, f->re, f->hc,
 		FFTW_R2HC, FFTW_DESTROY_INPUT| FFTW_MEASURE);
 	for (int i=0;i<f->fft_len;i++) f->re[i]=0;
+	printf("FF_DF - len= %d  FFt_len = %d \n",f->len,f->fft_len);
 	f->re[f->len / 2] = 1.0;
 
+	for (int i = 0; i < f->fft_len; i++) fprintf(fpf,"%f\n",f->re[i]);
 
 
 	fftwf_execute(f->plan_filter);
-  for (int i = 0; i < f->len; i++) fprintf(fpf,"%f\n",f->hc[i]);
-  fclose(fpf);
+  for (int i = 0; i < f->fft_len; i++) fprintf(fpf1,"%f\n",f->hc[i]);
+	fclose(fpf);
+	fclose(fpf1);
 	return 0;
 }
 

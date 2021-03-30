@@ -21,6 +21,9 @@ processbq2 (jack_nframes_t nframes, void *arg)
   return 0;
 }
 
+const int filter_len = 16384	;
+const int fft_len = 32768;
+
 int
 main()
 {
@@ -31,8 +34,26 @@ jack_options_t options = JackNullOption;
 jack_status_t status;
 
 ConvEngine *ce=NULL;
-ConvEngine_Init(&ce, 16384,32768,1,48000,1024*8);
-FirFilter_DiracFilter(ce->fir_filters[0]);
+ConvEngine_Init(&ce, filter_len,fft_len,1,48000,filter_len*4);
+
+
+FILE *fpf = fopen("LR4300.txt","r");
+//FILE *fpf = fopen("Dirac.txt","r");
+float* filter_buffer;
+filter_buffer = fftwf_alloc_real(filter_len);
+for (int i = 0; i < filter_len; i++) fscanf(fpf,"%f\n",&filter_buffer[i]);
+fclose(fpf);
+printf("read in filter  - len = %d\n" , filter_len);
+FirFilter_LoadFilter(ce->fir_filters[0],filter_len,filter_buffer);
+FILE *fpf2 = fopen("sent","w");
+for (int i = 0; i < filter_len; i++) fprintf(fpf2,"%f\n",filter_buffer[i]);
+
+
+
+printf("loaded filter\n");
+//FirFilter_DiracFilter(ce->fir_filters[0]);
+
+
 /* open a client connection to the JACK server */
 client = jack_client_open (client_name, options, &status, server_name);
 jack_set_process_callback (client, processbq2, ce);
