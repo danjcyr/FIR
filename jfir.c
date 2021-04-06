@@ -21,23 +21,41 @@ processbq2 (jack_nframes_t nframes, void *arg)
   return 0;
 }
 
-const int filter_len = 16384	;
-const int fft_len = 32768;
+ int filter_len = 16384;
+ int fft_len = 32768;
 
 int
-main()
+main(int argc, char **argv)
 {
+	char *client_name;
+	char *imp_file_name;
+	int sample_rate;
+
+	if(argc!=6)
+	{
+		printf("Usage : $ %s <jack_client_name> <impulse-file> <sample_rate> <filter_len> <fft_len>\n",argv[0] );
+		exit(0);
+	}
+
+	client_name=argv[1];
+	imp_file_name=argv[2];
+	sample_rate = atol(argv[3]);
+	filter_len = atol(argv[4]);
+	fft_len = atol(argv[5]);
+
+	printf(" Initializing Engine %s with impulse %s, SR=%d, filter_len = %d, fft_len=%d\n",client_name, imp_file_name, sample_rate, filter_len,fft_len);
 //  const char **ports;
-const char *client_name = "FIR1";
+//const char *client_name = "FIR1";
 const char *server_name = NULL;
 jack_options_t options = JackNullOption;
 jack_status_t status;
 
 ConvEngine *ce=NULL;
-ConvEngine_Init(&ce, filter_len,fft_len,1,48000,filter_len*4);
+ConvEngine_Init(&ce, filter_len,fft_len,1,sample_rate,filter_len/2);
 
 
-FILE *fpf = fopen("LR4300.txt","r");
+//FILE *fpf = fopen("LR4300.txt","r");
+FILE *fpf = fopen(imp_file_name,"r");
 //FILE *fpf = fopen("Dirac.txt","r");
 float* filter_buffer;
 filter_buffer = fftwf_alloc_real(filter_len);
@@ -45,8 +63,8 @@ for (int i = 0; i < filter_len; i++) fscanf(fpf,"%f\n",&filter_buffer[i]);
 fclose(fpf);
 printf("read in filter  - len = %d\n" , filter_len);
 FirFilter_LoadFilter(ce->fir_filters[0],filter_len,filter_buffer);
-FILE *fpf2 = fopen("sent","w");
-for (int i = 0; i < filter_len; i++) fprintf(fpf2,"%f\n",filter_buffer[i]);
+//FILE *fpf2 = fopen("sent","w");
+//for (int i = 0; i < filter_len; i++) fprintf(fpf2,"%f\n",filter_buffer[i]);
 
 
 
@@ -55,7 +73,8 @@ printf("loaded filter\n");
 
 
 /* open a client connection to the JACK server */
-client = jack_client_open (client_name, options, &status, server_name);
+//client = jack_client_open (client_name, options, &status, server_name);
+client = jack_client_open (argv[1], options, &status, server_name);
 jack_set_process_callback (client, processbq2, ce);
 input_port = jack_port_register (client, "input",
          JACK_DEFAULT_AUDIO_TYPE,
