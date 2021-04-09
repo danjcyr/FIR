@@ -6,6 +6,10 @@ jack_port_t *input_port;
 jack_port_t *output_port;
 jack_client_t *client;
 
+void ProcessConfig(char *file_name,ConvEngine **ce)
+{
+	printf("nothing to see here\n");
+}
 int
 processbq2 (jack_nframes_t nframes, void *arg)
 {
@@ -31,12 +35,22 @@ main(int argc, char **argv)
 	char *imp_file_name;
 	int sample_rate;
 
-	if(argc!=6)
+	ConvEngine *ce=NULL;
+
+	if(!(argc==6 ||  argc==3))
 	{
 		printf("Usage : $ %s <jack_client_name> <impulse-file> <sample_rate> <filter_len> <fft_len>\n",argv[0] );
+		printf("Usage : $ %s <jack_client_name> <config_file>\n",argv[0] );
 		exit(0);
 	}
 
+  if(argc==3)
+	{
+
+		ProcessConfig(argv[2], &ce);
+	}
+	else
+	{
 	client_name=argv[1];
 	imp_file_name=argv[2];
 	sample_rate = atol(argv[3]);
@@ -50,7 +64,6 @@ const char *server_name = NULL;
 jack_options_t options = JackNullOption;
 jack_status_t status;
 
-ConvEngine *ce=NULL;
 ConvEngine_Init(&ce, filter_len,fft_len,1,sample_rate,filter_len/2);
 
 
@@ -84,6 +97,7 @@ output_port = jack_port_register (client, "output",
           JackPortIsOutput, 0);
 printf("act\n");
   jack_activate (client);
+}
 
   sleep (-1);
 return 0;

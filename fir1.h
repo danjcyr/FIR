@@ -11,6 +11,8 @@
 #include <stdbool.h>
 #include <assert.h>
 
+#include <jack/jack.h>
+
 // FIR buffer implementing queing in alternate buffer during fft processing.
 typedef struct fir_buffer {
    int segment_len;     // max size of real data before starting processing
@@ -88,6 +90,11 @@ typedef struct conv_engine {
   int num_fir_filters;  // number of unique outputs for single input
   FirFilter **fir_filters; // array of pointers to FirFilter structs
   int num_extra_frames; // number of frames extra to reduce chance of xrun
+
+  jack_port_t *input_port; // input port for this ConvEngine instance
+  jack_port_t **output_port; // array of output ports  (length num_fir_filters)
+  jack_client_t *client; // client for JACK
+  char *client_name; // name of client for JACK
 
   pthread_t  thread_conv; // thread to run convolution engine
   bool conv_processing;  // variable used to indicate Convolution engine is busy processing
