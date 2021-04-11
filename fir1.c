@@ -189,7 +189,7 @@ int FirFilter_Init(FirFilter **pf, int len, int fft_len, int num_extra_frames, i
 	f->biquads = NULL;
 
 	f->plan_output = fftwf_plan_r2r_1d(f->fft_len, f->out_hc, f->out_r, FFTW_HC2R,
-		 FFTW_MEASURE);
+		  FFTW_ESTIMATE);
 
 	CircBuffer_Init(&f->outBuffer, 2 *f->segment_len + f->num_extra_frames);
 	f->outBuffer->next_write_idx = f->segment_len + f->num_extra_frames;
@@ -221,7 +221,7 @@ int FirFilter_LoadFilter(FirFilter *f, int len, float *impulse)
 
 	if (f->plan_filter != NULL) fftwf_destroy_plan(f->plan_filter);
 	f->plan_filter = fftwf_plan_r2r_1d(f->fft_len, f->re, f->hc,
-		FFTW_R2HC, FFTW_DESTROY_INPUT | FFTW_MEASURE);
+		FFTW_R2HC, FFTW_DESTROY_INPUT |  FFTW_ESTIMATE);
 	for (int i=0;i<f->fft_len;i++) f->re[i]=0;
 
 	memcpy(f->re, impulse, sizeof(float) *f->len);
@@ -248,7 +248,7 @@ int FirFilter_DiracFilter(FirFilter *f)
 
   if (f->plan_filter != NULL) fftwf_destroy_plan(f->plan_filter);
   f->plan_filter = fftwf_plan_r2r_1d(f->fft_len, f->re, f->hc,
-		FFTW_R2HC, FFTW_DESTROY_INPUT| FFTW_MEASURE);
+		FFTW_R2HC, FFTW_DESTROY_INPUT|  FFTW_ESTIMATE);
 	for (int i=0;i<f->fft_len;i++) f->re[i]=0;
 	printf("FF_DF - len= %d  FFt_len = %d \n",f->len,f->fft_len);
 	f->re[f->len / 2] = 1.0;
@@ -264,14 +264,15 @@ int FirFilter_DiracFilter(FirFilter *f)
 }
 
 // ConvEngine prototypes
-int ConvEngine_Init(ConvEngine **pce, int filter_len, int fft_len, int num_fir_filters, int sample_rate, int num_extra_frames)
+int ConvEngine_Init(ConvEngine **pce, fir_conf_t cfg)
 {
-
+  printf("CE(init) fil_len = %d fft_len = %d  numfir = %d extra=%d\n",
+		cfg.filter_len, cfg.fft_len, cfg.num_outputs, cfg.extra_samples);
 	(*pce) = (ConvEngine*) malloc(sizeof(ConvEngine));
 	ConvEngine *ce = (*pce);
-	ce->fft_len = fft_len;
-	ce->filter_len = filter_len;
-	ce->sample_rate = sample_rate;
+	ce->fft_len = cfg.fft_len;
+	ce->filter_len = cfg.filter_len;
+	ce->sample_rate = cfg.sample_rate;
 	ce->oo_fft_len = 1.0 / (double) ce->filter_len;
 	ce->segment_len = ce->fft_len - ce->filter_len + 1;
 	ce->overlap_size = ce->filter_len - 1;
@@ -281,25 +282,34 @@ int ConvEngine_Init(ConvEngine **pce, int filter_len, int fft_len, int num_fir_f
 	ce->fir_buffer = (FirBuffer*) malloc(sizeof(FirBuffer));
 	FirBuffer_Init(&(ce->fir_buffer),  ce->segment_len,ce->fft_len);
 	ce->plan_input1 = fftwf_plan_r2r_1d(ce->fft_len, ce->fir_buffer->b1, ce->in_hc,
-		FFTW_R2HC,  FFTW_DESTROY_INPUT|FFTW_MEASURE);
+		FFTW_R2HC,  FFTW_DESTROY_INPUT| FFTW_ESTIMATE);
 		ce->plan_input2 = fftwf_plan_r2r_1d(ce->fft_len, ce->fir_buffer->b2, ce->in_hc,
-			FFTW_R2HC,  FFTW_DESTROY_INPUT|FFTW_MEASURE);
+			FFTW_R2HC,  FFTW_DESTROY_INPUT| FFTW_ESTIMATE);
 
 	ce->num_input_biquads = 0;
 	ce->biquads = NULL;
-	ce->num_fir_filters = num_fir_filters;
+	ce->num_fir_filters = cfg.num_outputs;
 	ce->fir_filters = (FirFilter **) malloc(sizeof(FirFilter*) *ce->num_fir_filters);
-	ce->num_extra_frames = num_extra_frames;
+	ce->num_extra_frames = cfg.extra_samples;
+	ce->output_buffers = (jack_default_audio_sample_t**)malloc(sizeof(jack_default_audio_sample_t*)* ce->num_fir_filters);
+	ce->input_name=(char *)malloc(strlen(cfg.input_name));
+	strcpy(ce->input_name,cfg.input_name);
+	ce->client_name = (char *)malloc(strlen(cfg.client_name));
+	strcpy(ce->client_name,cfg.client_name);
+	ce->output_ports=(jack_port_t**)malloc(sizeof(jack_port_t *)*ce->num_fir_filters);
+	ce->output_port_names = (char**)malloc(sizeof(char*)*ce->num_fir_filters);
+	ce->output_buffers=(jack_default_audio_sample_t **)malloc(sizeof(jack_default_audio_sample_t*)*ce->num_fir_filters);
 	for (int i = 0; i < ce->num_fir_filters; i++)
 	{
+		ce->output_port_names[i]=cfg.output_portnames[i];
 		ce->fir_filters[i] = (FirFilter*) malloc(sizeof(FirFilter));
 		FirFilter_Init(&ce->fir_filters[i], ce->filter_len, ce->fft_len, ce->num_extra_frames, ce->sample_rate);
-
 		ce->fir_filters[i]->in_hc = ce->in_hc;
 	}
 	pthread_mutex_init(&ce->mut_conv, NULL);
 	pthread_mutex_init(&ce->mut_in_buffer, NULL);
 	pthread_mutex_init(&ce->mut_out_buffer, NULL);
+//	printf("CI mutin=%d\n",&ce->mut_in_buffer);
 	printf("done\n");
 	ce->conv_processing = false;
 	pthread_create(&ce->thread_conv, NULL, ConvEngine_ConvThread, ce);
@@ -307,11 +317,24 @@ int ConvEngine_Init(ConvEngine **pce, int filter_len, int fft_len, int num_fir_f
 	return 0;
 }
 
+void ConvEngine_Dump(ConvEngine *ce)
+{
+	printf("\n\nConvengine\n");
+	printf("num fir filters %d\n",ce->num_fir_filters);
+	for(int i=0;i<ce->num_fir_filters;i++)
+	{
+//		printf("i=%d : outport= %d name=%s outbuff=%d\n",i,ce->output_ports[i],ce->output_port_names[i],ce->output_buffers[i]);
+	}
+}
+
 int ConvEngine_AddData(ConvEngine *ce, int len, float *data)
 {
-
+//	printf("in add data - portname = %s \n" , ce->input_name);
+//	printf("in add data - portname = %s mutex= %d \n" , ce->input_name,&ce->mut_in_buffer);
 	pthread_mutex_lock(&ce->mut_in_buffer);
+//	printf("in add data\n");
 	FirBuffer_AddData(ce->fir_buffer, len, data);
+//	printf("in add data 2\n");
 	if (ce->fir_buffer->buffer_ready > 0)	// ready for FFT processing - signal
 	{
   	pthread_cond_signal(&ce->cond_input_segment_ready);
@@ -358,8 +381,8 @@ int ConvEngine_GetData(ConvEngine *ce,int len, float** dst)
   pthread_mutex_lock(&ce->mut_out_buffer);
   for(int i=0;i<ce->num_fir_filters;i++)
   {
-    float *ob = dst[i];
-    CircBuffer_GetData(ce->fir_filters[i]->outBuffer,len,ob);
+//		printf("CEgeting data i = %d \n",i);
+    CircBuffer_GetData(ce->fir_filters[i]->outBuffer,len,dst[i]);
   }
   pthread_mutex_unlock(&ce->mut_out_buffer);
   return 0;
@@ -379,6 +402,7 @@ void *ConvEngine_ConvThread(void *v)
 	FirBuffer *fb = ce->fir_buffer;
 	while (true)
 	{
+//		printf("locking on in\n");
 		pthread_mutex_lock(&ce->mut_in_buffer);
 		pthread_cond_wait(&ce->cond_input_segment_ready, &ce->mut_in_buffer);
 		if (fb->buffer_ready >0)

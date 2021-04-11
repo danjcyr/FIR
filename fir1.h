@@ -69,6 +69,20 @@ typedef struct fir_filter{
 
 } FirFilter;
 
+// struct to hold configuration of single conv_engine instance
+typedef struct fir_conf
+{
+	const char *client_name;
+	const char *input_name;
+	int num_outputs;
+	int sample_rate;
+	int filter_len;
+	int fft_len;
+	int extra_samples;
+	char **filter_file_names;
+	char **output_portnames;
+} fir_conf_t;
+
 // convolution engine  1 input and N  (# fir filters) output. Output data in outBuffer of FirFilter
 typedef struct conv_engine {
   int fft_len;        // length of fft
@@ -92,9 +106,12 @@ typedef struct conv_engine {
   int num_extra_frames; // number of frames extra to reduce chance of xrun
 
   jack_port_t *input_port; // input port for this ConvEngine instance
-  jack_port_t **output_port; // array of output ports  (length num_fir_filters)
+  jack_port_t **output_ports; // array of output ports  (length num_fir_filters)
   jack_client_t *client; // client for JACK
   char *client_name; // name of client for JACK
+  char *input_name ;  // name of input port for jack
+  char **output_port_names; // array of output port names for jack
+  jack_default_audio_sample_t **output_buffers; // array to hold pointers in callback
 
   pthread_t  thread_conv; // thread to run convolution engine
   bool conv_processing;  // variable used to indicate Convolution engine is busy processing
@@ -127,15 +144,19 @@ int FirFilter_LoadFilter(FirFilter *f, int len, float *impulse);
 int FirFilter_DiracFilter(FirFilter *f);
 
 // ConvEngine prototypes
-int ConvEngine_Init(ConvEngine **pce, int filter_len, int fft_len,
-   int num_fir_filters,int sample_rate,int num_extra_frames);
+// int ConvEngine_Init(ConvEngine **ce, int filter_len, int fft_len,
+//    int num_fir_filters,int sample_rate,int num_extra_frames, const char *client_name,
+//     const char *in_port_name, char **out_port_names);
+int ConvEngine_Init(ConvEngine **ce, fir_conf_t cfg);
+// Debug printout 
+void ConvEngine_Dump(ConvEngine *ce);
 int ConvEngine_Destroy(ConvEngine *ce);
 
 // these two functions require extremely fast processing and must return
 // in less time than len/sample_rate
 int ConvEngine_AddData(ConvEngine *ce,int len, float* data);
 
-int ConvEngine_GetData(ConvEngine *ce,int len, float** dst);
+int ConvEngine_GetData(ConvEngine *ce,int len, jack_default_audio_sample_t** dst);
 void* ConvEngine_ConvThread(void *v);
 
 // FOR CHARLIE :)
