@@ -117,19 +117,20 @@ fir_conf_t ProcessConfig(char *file_name)
 	    conf.num_outputs = config_setting_length(setting);
 			conf.filter_file_names = (char **)malloc(sizeof(char*)*conf.num_outputs);
 			conf.output_portnames = (char **)malloc(sizeof(char*)*conf.num_outputs);
+			conf.output_Biquads = (Biquad **)malloc(sizeof(Biquad *)*conf.num_outputs);
+			conf.num_output_biquads = (int *)malloc(sizeof(int *)*conf.num_outputs);
+
 	    int i;
-//			printf(" %d outputs\n",conf.num_outputs);
+			printf(" %d outputs\n",conf.num_outputs);
 
 			for(i=0;i<conf.num_outputs;i++)
 			{
-				config_setting_t *ouput = config_setting_get_elem(setting,i);
+				config_setting_t *output = config_setting_get_elem(setting,i);
 				const char *port_name;
 				const char *impulse_name;
-				int number_biquads;
 				if (
-						(config_setting_lookup_string(ouput,"port_name",&port_name)) &&
-    				(config_setting_lookup_string(ouput,"impulse_file_name",&impulse_name)) &&
-						(config_setting_lookup_int(ouput,"number_biquads",&number_biquads))
+						(config_setting_lookup_string(output,"port_name",&port_name)) &&
+    				(config_setting_lookup_string(output,"impulse_file_name",&impulse_name))
 					)
 				{
 //					printf("output #%d : %s %s %d\n",i,port_name,impulse_name,number_biquads);
@@ -139,10 +140,62 @@ fir_conf_t ProcessConfig(char *file_name)
 					conf.filter_file_names[i] = (char *)malloc(sizeof(char *)*strlen(impulse_name));
 					strcpy(conf.filter_file_names[i],impulse_name);
 				}
+				printf("looking for bqs\n");
+				config_setting_t *cs_bq = config_setting_lookup(output,"Biquads");
+				printf("past\n");
+				conf.num_output_biquads[i]=0;
+				if(cs_bq)
+				{
+					printf("trying get numbq\n");
+					int numbq = config_setting_length(cs_bq);
+					printf("num bq = %d\n",numbq);
+					conf.output_Biquads[i]=(Biquad *)malloc(sizeof(Biquad)*numbq);
+					conf.num_output_biquads[i]=numbq;
+					for(int b=0;b<numbq;b++)
+					{
+							config_setting_t *confbq = config_setting_get_elem(cs_bq,b);
+
+							printf("fd\n");
+							if(config_setting_lookup_float(confbq,"a0",&(conf.output_Biquads[i][b].b0)))
+								printf("b0=%17.16lf\n",conf.output_Biquads[i][b].b0);
+							if(config_setting_lookup_float(confbq,"a1",&(conf.output_Biquads[i][b].b1)))
+								printf("b1=%17.16lf\n",conf.output_Biquads[i][b].b1);
+							if(config_setting_lookup_float(confbq,"a2",&(conf.output_Biquads[i][b].b2)))
+								printf("b2=%17.16lf\n",conf.output_Biquads[i][b].b2);
+							if(config_setting_lookup_float(confbq,"b1",&(conf.output_Biquads[i][b].a1)))
+								printf("a1=%17.16lf\n",conf.output_Biquads[i][b].a1);
+							if(config_setting_lookup_float(confbq,"b2",&(conf.output_Biquads[i][b].a2)))
+								printf("a2=%17.16lf\n",conf.output_Biquads[i][b].a2);
+
+					}
+				}
 			} //end for i
 
 		}// end if setting
+		setting = config_lookup(&cfg, "input_Biquads");
+		if(setting != NULL)
+		{
+			conf.num_input_biquads = config_setting_length(setting);
+			conf.input_Biquads=(Biquad *)malloc(sizeof(Biquad)*conf.num_input_biquads);
+			printf("input biquads = %d",conf.num_input_biquads);
+			for(int i=0;i<conf.num_input_biquads;i++)
+			{
+					config_setting_t *confbq = config_setting_get_elem(setting,i);
 
+					if(config_setting_lookup_float(confbq,"a0",&(conf.input_Biquads[i].b0)))
+						printf("b0=%17.16lf\n",conf.input_Biquads[i].b0);
+					if(config_setting_lookup_float(confbq,"a1",&(conf.input_Biquads[i].b1)))
+						printf("b1=%17.16lf\n",conf.input_Biquads[i].b1);
+					if(config_setting_lookup_float(confbq,"a2",&(conf.input_Biquads[i].b2)))
+						printf("b2=%17.16lf\n",conf.input_Biquads[i].b2);
+					if(config_setting_lookup_float(confbq,"b1",&(conf.input_Biquads[i].a1)))
+						printf("a1=%17.16lf\n",conf.input_Biquads[i].a1);
+					if(config_setting_lookup_float(confbq,"b2",&(conf.input_Biquads[i].a2)))
+						printf("a2=%17.16lf\n",conf.input_Biquads[i].a2);
+			}
+
+
+		}
 return conf;
 
 }
@@ -154,7 +207,7 @@ void DumpConf(fir_conf_t c)
 	c.client_name,c.input_name,c.num_outputs,c.sample_rate,c.filter_len,c.fft_len,c.extra_samples);
   for(int i=0;i<c.num_outputs;i++)
 	{
-		printf("i=%d  filterfile = %s  port = %s\n",i,c.filter_file_names[i],c.output_portnames[i]);
+		printf("i=%d  filterfile = %s  port = %s numbq=%d\n",i,c.filter_file_names[i],c.output_portnames[i],c.num_output_biquads[i]);
 	}
 printf("\n\n");
 }

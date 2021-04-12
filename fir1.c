@@ -35,6 +35,7 @@ int FirBuffer_Init(FirBuffer **pbuf, int segment_len, int fft_length)
 int FirBuffer_AddData(FirBuffer *buf, int len, float *data)
 {
 	// if entire write fits in current buffer - write and return
+
 	if ((buf->num_in_buffer + len) < buf->segment_len)
 	{
 		memcpy(&buf->write_buffer[buf->num_in_buffer], data, sizeof(float) *len);
@@ -263,6 +264,17 @@ int FirFilter_DiracFilter(FirFilter *f)
 	return 0;
 }
 
+void Biquad_Init(Biquad *b)
+{
+	//initialize
+	b->x1 = 0.0;
+	b->x2 = 0.0;
+	b->y1 = 0;
+	b->y2 = 0;
+	b->dn = 0;
+}
+
+
 // ConvEngine prototypes
 int ConvEngine_Init(ConvEngine **pce, fir_conf_t cfg)
 {
@@ -286,8 +298,20 @@ int ConvEngine_Init(ConvEngine **pce, fir_conf_t cfg)
 		ce->plan_input2 = fftwf_plan_r2r_1d(ce->fft_len, ce->fir_buffer->b2, ce->in_hc,
 			FFTW_R2HC,  FFTW_DESTROY_INPUT| FFTW_ESTIMATE);
 
-	ce->num_input_biquads = 0;
-	ce->biquads = NULL;
+	ce->num_input_biquads = cfg.num_input_biquads;
+	printf("num in bq = %d\n",ce->num_input_biquads);
+	if(cfg.num_input_biquads>0)
+	{
+		ce->biquads = (Biquad *)malloc(sizeof(Biquad)*ce->num_input_biquads);
+		for(int b=0;b<ce->num_input_biquads;b++)
+		{
+			ce->biquads[b]=cfg.input_Biquads[b];
+		}
+	}
+	else
+	{
+		ce->biquads = NULL;
+	}
 	ce->num_fir_filters = cfg.num_outputs;
 	ce->fir_filters = (FirFilter **) malloc(sizeof(FirFilter*) *ce->num_fir_filters);
 	ce->num_extra_frames = cfg.extra_samples;
@@ -305,6 +329,17 @@ int ConvEngine_Init(ConvEngine **pce, fir_conf_t cfg)
 		ce->fir_filters[i] = (FirFilter*) malloc(sizeof(FirFilter));
 		FirFilter_Init(&ce->fir_filters[i], ce->filter_len, ce->fft_len, ce->num_extra_frames, ce->sample_rate);
 		ce->fir_filters[i]->in_hc = ce->in_hc;
+		printf("init fir %d\n",i);
+		ce->fir_filters[i]->num_output_biquads=cfg.num_output_biquads[i];
+		printf("fir # %d - num bq = %d \n", i,ce->fir_filters[i]->num_output_biquads);
+		if(cfg.num_output_biquads[i]>0)
+		{
+			ce->fir_filters[i]->biquads = (Biquad *)malloc(sizeof(Biquad)*cfg.num_output_biquads[i]);
+			for(int b=0;b<cfg.num_output_biquads[i];b++)
+			{
+				ce->fir_filters[i]->biquads[b]=cfg.output_Biquads[i][b];
+			}
+		}
 	}
 	pthread_mutex_init(&ce->mut_conv, NULL);
 	pthread_mutex_init(&ce->mut_in_buffer, NULL);
@@ -327,8 +362,36 @@ void ConvEngine_Dump(ConvEngine *ce)
 	}
 }
 
+void ProcessBQ(int nframes, Biquad *bqs,int nbq_used,float *data)
+{
+	double x,y;
+
+	for(int i=0;i<nframes;i++)
+    {
+        double ph = data[i];
+        for(int j=0;j<nbq_used;j++)
+        {
+            Biquad *f=&bqs[j];
+            x=ph;
+            y = f->b0 * x + f->b1 * f->x1 + f->b2 * f->x2 - f->a1 * f->y1 - f->a2 * f->y2 + f->dn;
+            f->dn = -f->dn;
+            f->x2 = f->x1;
+            f->x1 = x;
+            f->y2 = f->y1;
+            f->y1 = y;
+            ph=y;
+        }
+
+        data[i] = (jack_default_audio_sample_t)ph;
+	}
+}
+
 int ConvEngine_AddData(ConvEngine *ce, int len, float *data)
 {
+	if(ce->num_input_biquads>0)
+	{
+		ProcessBQ(len,ce->biquads,ce->num_input_biquads,data);
+	}
 //	printf("in add data - portname = %s \n" , ce->input_name);
 //	printf("in add data - portname = %s mutex= %d \n" , ce->input_name,&ce->mut_in_buffer);
 	pthread_mutex_lock(&ce->mut_in_buffer);
@@ -385,6 +448,13 @@ int ConvEngine_GetData(ConvEngine *ce,int len, float** dst)
     CircBuffer_GetData(ce->fir_filters[i]->outBuffer,len,dst[i]);
   }
   pthread_mutex_unlock(&ce->mut_out_buffer);
+	for(int i=0;i<ce->num_fir_filters;i++)
+  {
+		if(ce->fir_filters[i]->num_output_biquads>0)
+		{
+			ProcessBQ(len,ce->fir_filters[i]->biquads,ce->fir_filters[i]->num_output_biquads,dst[i]);
+		}
+	}
   return 0;
 }
 

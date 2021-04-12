@@ -39,7 +39,7 @@ typedef struct biquad {
   double dn;
   double x1, x2, y1, y2;
   double b0, b1, b2, a1, a2;
-}Biquad;
+} Biquad;
 
 // FIR filter structure
 typedef struct fir_filter{
@@ -79,8 +79,15 @@ typedef struct fir_conf
 	int filter_len;
 	int fft_len;
 	int extra_samples;
+
+  int num_input_biquads;
+  Biquad *input_Biquads;
+
 	char **filter_file_names;
 	char **output_portnames;
+  int *num_output_biquads;
+  Biquad **output_Biquads;
+
 } fir_conf_t;
 
 // convolution engine  1 input and N  (# fir filters) output. Output data in outBuffer of FirFilter
@@ -148,7 +155,7 @@ int FirFilter_DiracFilter(FirFilter *f);
 //    int num_fir_filters,int sample_rate,int num_extra_frames, const char *client_name,
 //     const char *in_port_name, char **out_port_names);
 int ConvEngine_Init(ConvEngine **ce, fir_conf_t cfg);
-// Debug printout 
+// Debug printout
 void ConvEngine_Dump(ConvEngine *ce);
 int ConvEngine_Destroy(ConvEngine *ce);
 
